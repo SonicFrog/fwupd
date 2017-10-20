@@ -1,6 +1,6 @@
 /* -*- Mode: C; tab-width: 8; indent-tabs-mode: t; c-basic-offset: 8 -*-
  *
- * Copyright (C) 2015 Richard Hughes <richard@hughsie.com>
+ * Copyright (C) 2015-2017 Richard Hughes <richard@hughsie.com>
  *
  * Licensed under the GNU Lesser General Public License Version 2.1
  *
@@ -48,6 +48,22 @@ typedef enum {
 	/*< private >*/
 	DFU_DEVICE_OPEN_FLAG_LAST
 } DfuDeviceOpenFlags;
+
+/**
+ * DfuDeviceProtocol:
+ * @DFU_DEVICE_PROTOCOL_DFU:			Standard DFU
+ * @DFU_DEVICE_PROTOCOL_STM32:			STM32 variant
+ * @DFU_DEVICE_PROTOCOL_UC3:			UC3 variant
+ *
+ * The protocol variant supported by the device.
+ **/
+typedef enum {
+	DFU_DEVICE_PROTOCOL_DFU,
+	DFU_DEVICE_PROTOCOL_STM32,
+	DFU_DEVICE_PROTOCOL_UC3,
+	/*< private >*/
+	DFU_DEVICE_PROTOCOL_LAST
+} DfuDeviceProtocol;
 
 /**
  * DfuDeviceQuirks:
@@ -131,6 +147,8 @@ struct _DfuDeviceClass
 	void (*_dfu_device_reserved7) (void);
 	void (*_dfu_device_reserved8) (void);
 };
+
+const gchar	*dfu_device_protocol_to_string		(DfuDeviceProtocol protocol);
 
 DfuDevice	*dfu_device_new				(GUsbDevice	*dev);
 gboolean	 dfu_device_open			(DfuDevice	*device,

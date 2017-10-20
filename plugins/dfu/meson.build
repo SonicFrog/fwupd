@@ -18,6 +18,8 @@ dfu = static_library(
     'dfu-patch.c',
     'dfu-sector.c',
     'dfu-target.c',
+    'dfu-target-stm32.c',
+    'dfu-target-uc3.c',
   ],
   dependencies : [
     appstream_glib,

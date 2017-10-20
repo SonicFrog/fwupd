@@ -1,6 +1,6 @@
 /* -*- Mode: C; tab-width: 8; indent-tabs-mode: t; c-basic-offset: 8 -*-
  *
- * Copyright (C) 2015 Richard Hughes <richard@hughsie.com>
+ * Copyright (C) 2015-2017 Richard Hughes <richard@hughsie.com>
  *
  * Licensed under the GNU Lesser General Public License Version 2.1
  *
@@ -60,7 +60,7 @@ typedef struct {
 	GUsbDevice		*dev;
 	FuDeviceLocker		*dev_locker;
 	gboolean		 open_new_dev;		/* if set new GUsbDevice */
-	gboolean		 dfuse_supported;
+	DfuDeviceProtocol	 protocol;
 	gboolean		 done_upload_or_download;
 	gboolean		 claimed_interface;
 	gchar			*display_name;
@@ -88,6 +88,18 @@ static guint signals [SIGNAL_LAST] = { 0 };
 
 G_DEFINE_TYPE_WITH_PRIVATE (DfuDevice, dfu_device, G_TYPE_OBJECT)
 #define GET_PRIVATE(o) (dfu_device_get_instance_private (o))
+
+const gchar *
+dfu_device_protocol_to_string (DfuDeviceProtocol protocol)
+{
+	if (protocol == DFU_DEVICE_PROTOCOL_DFU)
+		return "DFU";
+	if (protocol == DFU_DEVICE_PROTOCOL_STM32)
+		return "STM32";
+	if (protocol == DFU_DEVICE_PROTOCOL_UC3)
+		return "UC3";
+	return NULL;
+}
 
 static void
 dfu_device_class_init (DfuDeviceClass *klass)
@@ -307,15 +319,15 @@ dfu_device_parse_iface_data (DfuDevice *device, GBytes *iface_data)
 	} else {
 		if (priv->version == DFU_VERSION_DFU_1_0 ||
 		    priv->version == DFU_VERSION_DFU_1_1) {
-			g_debug ("basic DFU, no DfuSe support");
-			priv->dfuse_supported = FALSE;
+			g_debug ("basic DFU 1.1");
+			priv->protocol = DFU_DEVICE_PROTOCOL_DFU;
 		} else if (priv->version == 0x0101) {
-			g_debug ("basic DFU 1.1 assumed, no DfuSe support");
+			g_debug ("basic DFU 1.1 assumed");
 			priv->version = DFU_VERSION_DFU_1_1;
-			priv->dfuse_supported = FALSE;
+			priv->protocol = DFU_DEVICE_PROTOCOL_DFU;
 		} else if (priv->version == DFU_VERSION_DFUSE) {
-			g_debug ("DfuSe support");
-			priv->dfuse_supported = TRUE;
+			g_debug ("STM32 support");
+			priv->protocol = DFU_DEVICE_PROTOCOL_STM32;
 		} else {
 			g_warning ("DFU version is invalid: 0x%04x",
 				   priv->version);
@@ -323,7 +335,7 @@ dfu_device_parse_iface_data (DfuDevice *device, GBytes *iface_data)
 	}
 
 	/* ST-specific */
-	if (priv->dfuse_supported &&
+	if (priv->protocol == DFU_DEVICE_PROTOCOL_STM32 &&
 	    desc->bmAttributes & DFU_DEVICE_ATTRIBUTE_CAN_ACCELERATE)
 		priv->transfer_size = 0x1000;
 
@@ -604,19 +616,19 @@ dfu_device_has_attribute (DfuDevice *device, DfuDeviceAttributes attribute)
 }
 
 /**
- * dfu_device_has_dfuse_support:
+ * dfu_device_get_protocol:
  * @device: A #DfuDevice
  *
- * Returns is DfuSe is supported on a device.
+ * Returns what protocol is used by a device.
  *
- * Return value: %TRUE for DfuSe
+ * Return value: a #DfuDeviceProtocol, e.g. %DFU_DEVICE_PROTOCOL_STM32
  **/
-gboolean
-dfu_device_has_dfuse_support (DfuDevice *device)
+DfuDeviceProtocol
+dfu_device_get_protocol (DfuDevice *device)
 {
 	DfuDevicePrivate *priv = GET_PRIVATE (device);
 	g_return_val_if_fail (DFU_IS_DEVICE (device), FALSE);
-	return priv->dfuse_supported;
+	return priv->protocol;
 }
 
 static void
@@ -679,6 +691,17 @@ dfu_device_set_quirks (DfuDevice *device)
 	if (vid == 0x1d50 && pid == 0x60a7) {
 		priv->quirks |= DFU_DEVICE_QUIRK_NO_DFU_RUNTIME |
 				DFU_DEVICE_QUIRK_ACTION_REQUIRED;
+	}
+
+	/* Atmel AVR32 */
+	if (vid == 0x03eb) {
+		switch (pid) {
+		case 0x2ff8:	/* AT32UC3A0/1 */
+			priv->protocol = DFU_DEVICE_PROTOCOL_UC3;
+			break;
+		default:
+			break;
+		}
 	}
 
 	/* Jabra */
@@ -1762,6 +1785,7 @@ gboolean
 dfu_device_attach (DfuDevice *device, GError **error)
 {
 	DfuDevicePrivate *priv = GET_PRIVATE (device);
+	g_autoptr(DfuTarget) target = NULL;
 
 	g_return_val_if_fail (DFU_IS_DEVICE (device), FALSE);
 	g_return_val_if_fail (error == NULL || *error == NULL, FALSE);
@@ -1786,41 +1810,23 @@ dfu_device_attach (DfuDevice *device, GError **error)
 	if (!priv->done_upload_or_download &&
 	    (priv->quirks & DFU_DEVICE_QUIRK_ATTACH_UPLOAD_DOWNLOAD) > 0) {
 		g_autoptr(GBytes) chunk = NULL;
-		g_autoptr(DfuTarget) target = NULL;
+		g_autoptr(DfuTarget) target_zero = NULL;
 		g_debug ("doing dummy upload to work around m-stack quirk");
-		target = dfu_device_get_target_by_alt_setting (device, 0, error);
-		if (target == NULL)
+		target_zero = dfu_device_get_target_by_alt_setting (device, 0, error);
+		if (target_zero == NULL)
 			return FALSE;
-		chunk = dfu_target_upload_chunk (target, 0, NULL, error);
+		chunk = dfu_target_upload_chunk (target_zero, 0, NULL, error);
 		if (chunk == NULL)
 			return FALSE;
 	}
 
-	/* there's a a special command for ST devices */
-	if (priv->dfuse_supported) {
-		g_autoptr(DfuTarget) target = NULL;
-		g_autoptr(GBytes) bytes_tmp = NULL;
-
-		/* get default target */
-		target = dfu_device_get_target_by_alt_setting (device, 0, error);
-		if (target == NULL)
-			return FALSE;
-
-		/* do zero byte download */
-		bytes_tmp = g_bytes_new (NULL, 0);
-		if (!dfu_target_download_chunk (target,
-						0 + 2,
-						bytes_tmp,
-						NULL,
-						error))
-			return FALSE;
-
-		dfu_device_set_action (device, FWUPD_STATUS_IDLE);
-		return TRUE;
-	}
+	/* get default target */
+	target = dfu_device_get_target_by_alt_setting (device, 0, error);
+	if (target == NULL)
+		return FALSE;
 
 	/* normal DFU mode just needs a bus reset */
-	if (!dfu_device_reset (device, error))
+	if (!dfu_target_attach (target, NULL, error))
 		return FALSE;
 
 	/* some devices need yet another reset */

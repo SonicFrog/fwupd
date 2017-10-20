@@ -1,6 +1,6 @@
 /* -*- Mode: C; tab-width: 8; indent-tabs-mode: t; c-basic-offset: 8 -*-
  *
- * Copyright (C) 2015 Richard Hughes <richard@hughsie.com>
+ * Copyright (C) 2017 Richard Hughes <richard@hughsie.com>
  *
  * Licensed under the GNU Lesser General Public License Version 2.1
  *
@@ -19,37 +19,33 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301 USA
  */
 
-#ifndef __DFU_DEVICE_PRIVATE_H
-#define __DFU_DEVICE_PRIVATE_H
+#ifndef __DFU_TARGET_STM32_H
+#define __DFU_TARGET_STM32_H
 
-#include <glib-object.h>
-#include <gio/gio.h>
-#include <gusb.h>
+#include "dfu-target.h"
 
-#include "dfu-device.h"
+#include "fwupd-enums.h"
 
 G_BEGIN_DECLS
 
-#define DFU_DEVICE_REPLUG_TIMEOUT	5000	/* ms */
-
-GUsbDevice	*dfu_device_get_usb_dev			(DfuDevice	*device);
-
-DfuDeviceProtocol dfu_device_get_protocol		(DfuDevice	*device);
-
-void		 dfu_device_error_fixup			(DfuDevice	*device,
+gboolean	 dfu_target_stm32_attach		(DfuTarget	*target,
 							 GCancellable	*cancellable,
 							 GError		**error);
-guint		 dfu_device_get_download_timeout	(DfuDevice	*device);
-gchar		*dfu_device_get_quirks_as_string	(DfuDevice	*device);
-gchar		*dfu_device_get_attributes_as_string	(DfuDevice	*device);
-gboolean	 dfu_device_set_new_usb_dev		(DfuDevice	*device,
-							 GUsbDevice	*dev,
+gboolean	 dfu_target_stm32_mass_erase		(DfuTarget	*target,
 							 GCancellable	*cancellable,
 							 GError		**error);
-gboolean	 dfu_device_ensure_interface		(DfuDevice	*device,
+DfuElement	*dfu_target_stm32_upload_element	(DfuTarget	*target,
+							 guint32	 address,
+							 gsize		 expected_size,
+							 gsize		 maximum_size,
+							 GCancellable	*cancellable,
+							 GError		**error);
+gboolean	 dfu_target_stm32_download_element	(DfuTarget	*target,
+							 DfuElement	*element,
+							 DfuTargetTransferFlags flags,
 							 GCancellable	*cancellable,
 							 GError		**error);
 
 G_END_DECLS
 
-#endif /* __DFU_DEVICE_PRIVATE_H */
+#endif /* __DFU_TARGET_STM32_H */

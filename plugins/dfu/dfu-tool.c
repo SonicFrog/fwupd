@@ -2105,6 +2105,10 @@ dfu_tool_list (DfuToolPrivate *priv, gchar **values, GError **error)
 		/* TRANSLATORS: device mode, e.g. runtime or DFU */
 		dfu_tool_print_indent (_("Mode"), tmp, 1);
 
+		tmp = dfu_device_protocol_to_string (dfu_device_get_protocol (device));
+		/* TRANSLATORS: device protocol, e.g. STM32 */
+		dfu_tool_print_indent (_("Protocol"), tmp, 1);
+
 		tmp = dfu_status_to_string (dfu_device_get_status (device));
 		/* TRANSLATORS: device status, e.g. "OK" */
 		dfu_tool_print_indent (_("Status"), tmp, 1);

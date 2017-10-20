@@ -1,6 +1,6 @@
 /* -*- Mode: C; tab-width: 8; indent-tabs-mode: t; c-basic-offset: 8 -*-
  *
- * Copyright (C) 2015 Richard Hughes <richard@hughsie.com>
+ * Copyright (C) 2015-2017 Richard Hughes <richard@hughsie.com>
  *
  * Licensed under the GNU Lesser General Public License Version 2.1
  *
@@ -96,6 +96,9 @@ DfuImage	*dfu_target_upload			(DfuTarget	*target,
 gboolean	 dfu_target_download			(DfuTarget	*target,
 							 DfuImage	*image,
 							 DfuTargetTransferFlags flags,
+							 GCancellable	*cancellable,
+							 GError		**error);
+gboolean	 dfu_target_mass_erase			(DfuTarget	*target,
 							 GCancellable	*cancellable,
 							 GError		**error);
 DfuCipherKind	 dfu_target_get_cipher_kind		(DfuTarget	*target);
