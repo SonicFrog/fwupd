@@ -1410,6 +1410,7 @@ fu_util_update (FuUtilPrivate *priv, gchar **values, GError **error)
 	for (guint i = 0; i < devices->len; i++) {
 		FwupdDevice *dev = g_ptr_array_index (devices, i);
 		FwupdRelease *rel;
+		gint j;
 		g_autoptr(GPtrArray) rels = NULL;
 		g_autoptr(GError) error_local = NULL;
 
@@ -1425,9 +1426,17 @@ fu_util_update (FuUtilPrivate *priv, gchar **values, GError **error)
 			g_printerr ("%s\n", error_local->message);
 			continue;
 		}
-		rel = g_ptr_array_index (rels, 0);
-		if (!fu_util_update_device_with_release (priv, dev, rel, error))
+
+		j = rels->len - 1;
+		do {
+			rel = g_ptr_array_index (rels, j--);
+			g_clear_error (error);
+		} while (!fu_util_update_device_with_release (priv, dev, rel, error) &&
+			j >= 0);
+
+		if (j == 0)
 			return FALSE;
+
 	}
 	return TRUE;
 }
