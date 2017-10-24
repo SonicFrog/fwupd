@@ -2246,6 +2246,8 @@ fu_engine_get_upgrades (FuEngine *self, const gchar *device_id, GError **error)
 	releases = g_ptr_array_new_with_free_func ((GDestroyNotify) g_object_unref);
 	for (guint i = 0; i < releases_tmp->len; i++) {
 		FwupdRelease *rel_tmp = g_ptr_array_index (releases_tmp, i);
+		AsApp *app_tmp = as_store_get_app_by_id (self->store,
+							 fwupd_release_get_appstream_id (rel_tmp));
 		gint vercmp;
 
 		/* only include older firmware */
@@ -2267,6 +2269,13 @@ fu_engine_get_upgrades (FuEngine *self, const gchar *device_id, GError **error)
 				 fu_device_get_version (item->device));
 			continue;
 		}
+
+		if (!fu_engine_check_requirements (app_tmp, item->device, NULL)) {
+			g_debug ("ignoring %s as the device does not satisfy its requirements",
+				 fwupd_release_get_version (rel_tmp));
+			continue;
+		}
+
 		g_ptr_array_add (releases, g_object_ref (rel_tmp));
 	}
 	if (error_str->len > 2)
