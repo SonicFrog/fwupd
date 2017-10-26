@@ -2052,9 +2052,6 @@ fu_engine_get_releases_for_device (FuEngine *self, FuDevice *device, GError **er
 		if (app == NULL)
 			continue;
 
-		/* check we can install it */
-		if (!fu_engine_check_requirements (app, device, error))
-			return NULL;
 		releases_tmp = as_app_get_releases (app);
 		for (guint j = 0; j < releases_tmp->len; j++) {
 			AsRelease *release = g_ptr_array_index (releases_tmp, j);
@@ -2153,6 +2150,8 @@ fu_engine_get_downgrades (FuEngine *self, const gchar *device_id, GError **error
 	releases = g_ptr_array_new_with_free_func ((GDestroyNotify) g_object_unref);
 	for (guint i = 0; i < releases_tmp->len; i++) {
 		FwupdRelease *rel_tmp = g_ptr_array_index (releases_tmp, i);
+		AsApp *app_tmp = as_store_get_app_by_id (self->store,
+							 fwupd_release_get_appstream_id (rel_tmp));
 		gint vercmp;
 
 		/* only include older firmware */
@@ -2187,6 +2186,15 @@ fu_engine_get_downgrades (FuEngine *self, const gchar *device_id, GError **error
 				continue;
 			}
 		}
+
+		if (!fu_engine_check_requirements(app_tmp, item->device, NULL)) {
+			g_string_append_printf (error_str, "%s=invalid, ",
+						fwupd_release_get_version (rel_tmp));
+			g_debug ("ignoring %s, not applicable to device",
+				 fwupd_release_get_version (rel_tmp));
+			continue;
+		}
+
 		g_ptr_array_add (releases, g_object_ref (rel_tmp));
 	}
 	if (error_str->len > 2)
