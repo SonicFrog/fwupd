@@ -375,50 +375,62 @@ lu_device_peripheral_probe (LuDevice *device, GError **error)
 }
 
 static gboolean
+lu_device_peripheral_dfu_message_format (LuDevice *device,
+					LuHidppMsg *msg,
+					const guint16 feature,
+					const guint flags,
+					GError **error)
+{
+	guint8 idx = 0x00;
+
+	idx = lu_device_hidpp_feature_get_idx (device, feature);
+
+	if (idx == 0x00)
+		return FALSE;
+
+	msg->report_id = HIDPP_REPORT_ID_LONG;
+	msg->device_id = lu_device_get_hidpp_id (device);
+	msg->sub_id = idx;
+	msg->function_id = 0x01 << 4; /* setDfuControl */
+	msg->data[0] = 0x01; /* enterDfu */
+	msg->data[1] = 0x00; /* dfuControlParam */
+	msg->data[2] = 0x00; /* unused */
+	msg->data[3] = 0x00; /* unused */
+	msg->data[4] = 'D';
+	msg->data[5] = 'F';
+	msg->data[6] = 'U';
+	msg->flags = flags;
+
+	return TRUE;
+}
+
+static gboolean
 lu_device_peripheral_detach (LuDevice *device, GError **error)
 {
-	guint8 idx;
 	g_autoptr(LuHidppMsg) msg = lu_hidpp_msg_new ();
 
 	/* this requires user action */
-	idx = lu_device_hidpp_feature_get_idx (device, HIDPP_FEATURE_DFU_CONTROL);
-	if (idx != 0x00) {
-		msg->report_id = HIDPP_REPORT_ID_LONG;
-		msg->device_id = lu_device_get_hidpp_id (device);
-		msg->sub_id = idx;
-		msg->function_id = 0x01 << 4; /* setDfuControl */
-		msg->data[0] = 0x01; /* enterDfu */
-		msg->data[1] = 0x00; /* dfuControlParam */
-		msg->data[2] = 0x00; /* unused */
-		msg->data[3] = 0x00; /* unused */
-		msg->data[4] = 'D';
-		msg->data[5] = 'F';
-		msg->data[6] = 'U';
-		msg->flags = LU_HIDPP_MSG_FLAG_IGNORE_SUB_ID |
-			     LU_HIDPP_MSG_FLAG_LONGER_TIMEOUT;
+	if (lu_device_peripheral_dfu_message_format (device,
+						     msg,
+						     HIDPP_FEATURE_DFU_CONTROL,
+						     LU_HIDPP_MSG_FLAG_IGNORE_SUB_ID |
+						     LU_HIDPP_MSG_FLAG_LONGER_TIMEOUT,
+						     error)) {
 		if (!lu_device_hidpp_transfer (device, msg, error)) {
 			g_prefix_error (error, "failed to put device into DFU mode: ");
 			return FALSE;
 		}
+
 		lu_device_add_flag (device, LU_DEVICE_FLAG_REQUIRES_RESET);
 		return TRUE;
 	}
 
 	/* this can reboot all by itself */
-	idx = lu_device_hidpp_feature_get_idx (device, HIDPP_FEATURE_DFU_CONTROL_SIGNED);
-	if (idx != 0x00) {
-		msg->report_id = HIDPP_REPORT_ID_LONG;
-		msg->device_id = lu_device_get_hidpp_id (device);
-		msg->sub_id = idx;
-		msg->function_id = 0x01 << 4; /* setDfuControl */
-		msg->data[0] = 0x01; /* startDfu */
-		msg->data[1] = 0x00; /* dfuControlParam */
-		msg->data[2] = 0x00; /* unused */
-		msg->data[3] = 0x00; /* unused */
-		msg->data[4] = 'D';
-		msg->data[5] = 'F';
-		msg->data[6] = 'U';
-		msg->flags = LU_HIDPP_MSG_FLAG_IGNORE_SUB_ID;
+	if (lu_device_peripheral_dfu_message_format (device,
+						     msg,
+						     HIDPP_FEATURE_DFU_CONTROL_SIGNED,
+						     LU_HIDPP_MSG_FLAG_IGNORE_SUB_ID,
+						     error)) {
 		if (!lu_device_hidpp_transfer (device, msg, error)) {
 			g_prefix_error (error, "failed to put device into DFU mode: ");
 			return FALSE;
@@ -433,6 +445,7 @@ lu_device_peripheral_detach (LuDevice *device, GError **error)
 		     G_IO_ERROR,
 		     G_IO_ERROR_FAILED,
 		     "no method to detach");
+
 	return FALSE;
 }
 
