@@ -180,16 +180,40 @@ fu_plugin_update (FuPlugin *plugin,
 	if (lu_device_has_flag (device, LU_DEVICE_FLAG_REQUIRES_DETACH)) {
 		/* wait for device to come back */
 		if (lu_device_has_flag (device, LU_DEVICE_FLAG_DETACH_WILL_REPLUG)) {
-			g_debug ("doing detach in idle");
-			g_idle_add_full (G_PRIORITY_DEFAULT_IDLE,
-					 fu_plugin_unifying_detach_cb,
-					 g_object_ref (device),
-					 (GDestroyNotify) g_object_unref);
-			if (!lu_context_wait_for_replug (data->ctx,
-							 device,
-							 FU_DEVICE_TIMEOUT_REPLUG,
-							 error))
-				return FALSE;
+			if (LU_IS_DEVICE_PERIPHERAL (device)) {
+				g_debug ("doing active detach");
+				if (!lu_device_detach (device, error))
+					return FALSE;
+
+				/* FIXME: should notify user around here */
+				if (!lu_context_wait_for_unifying_replug (data->ctx,
+									  device,
+									  FU_DEVICE_TIMEOUT_REPLUG,
+									  error)) {
+					g_set_error (error,
+						     G_IO_ERROR,
+						     G_IO_ERROR_FAILED,
+						     "failed to detect replugged device");
+					return FALSE;
+				}
+			} else {
+				g_debug ("doing detach in idle");
+				g_idle_add_full (G_PRIORITY_HIGH_IDLE,
+						 fu_plugin_unifying_detach_cb,
+						 g_object_ref (device),
+						 (GDestroyNotify) g_object_unref);
+				if (!lu_context_wait_for_replug (data->ctx,
+									  device,
+									  FU_DEVICE_TIMEOUT_REPLUG,
+									  error)) {
+					g_set_error (error,
+						     G_IO_ERROR,
+						     G_IO_ERROR_FAILED,
+						     "failed to detect replugged device");
+					return FALSE;
+				}
+			}
+
 			g_object_unref (device);
 			device = fu_plugin_unifying_get_device (plugin, dev, error);
 			if (device == NULL)
@@ -214,16 +238,32 @@ fu_plugin_update (FuPlugin *plugin,
 	/* wait for it to appear back in runtime mode */
 	if (lu_device_has_flag (device, LU_DEVICE_FLAG_REQUIRES_ATTACH)) {
 		if (lu_device_has_flag (device, LU_DEVICE_FLAG_ATTACH_WILL_REPLUG)) {
-			g_debug ("doing attach in idle");
-			g_idle_add_full (G_PRIORITY_DEFAULT_IDLE,
-					 fu_plugin_unifying_attach_cb,
-					 g_object_ref (device),
-					 (GDestroyNotify) g_object_unref);
-			if (!lu_context_wait_for_replug (data->ctx,
-							 device,
-							 FU_DEVICE_TIMEOUT_REPLUG,
-							 error))
-				return FALSE;
+			if (LU_IS_DEVICE_PERIPHERAL (device)) {
+				/* need to use unifying notification for replug */
+				if (!lu_device_attach (device, error))
+					return FALSE;
+				if (!lu_context_wait_for_unifying_replug (data->ctx,
+									  device,
+									  FU_DEVICE_TIMEOUT_REPLUG,
+									  error)) {
+					g_set_error (error,
+						     G_IO_ERROR,
+						     G_IO_ERROR_FAILED,
+						     "failed to detect replugged device");
+					return FALSE;
+				}
+			} else {
+				g_debug ("doing attach in idle");
+				g_idle_add_full (G_PRIORITY_DEFAULT_IDLE,
+						 fu_plugin_unifying_attach_cb,
+						 g_object_ref (device),
+						 (GDestroyNotify) g_object_unref);
+				if (!lu_context_wait_for_replug (data->ctx,
+								 device,
+								 FU_DEVICE_TIMEOUT_REPLUG,
+								 error))
+					return FALSE;
+			}
 			g_object_unref (device);
 			device = fu_plugin_unifying_get_device (plugin, dev, error);
 			if (device == NULL)

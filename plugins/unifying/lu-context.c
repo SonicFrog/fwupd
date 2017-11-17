@@ -434,6 +434,43 @@ lu_context_wait_for_replug (LuContext *ctx,
 	return TRUE;
 }
 
+gboolean
+lu_context_wait_for_unifying_replug (LuContext *ctx,
+				    LuDevice *device,
+				    guint timeout_ms,
+				    GError **error)
+{
+	g_autoptr(LuHidppMsg) msg = lu_hidpp_msg_new ();
+	const guint max_tries = 10;
+	const guint actual_timeout = timeout_ms / max_tries;
+	guint i = 0;
+
+	g_hash_table_insert (ctx->hash_replug,
+			     lu_device_get_platform_id(device),
+			     device);
+
+	do {
+		if (!lu_device_hidpp_receive (device, msg, actual_timeout, error)) {
+			if (g_error_matches (*error, G_IO_ERROR, G_IO_ERROR_TIMED_OUT)) {
+				g_clear_error (error);
+			}
+			continue;
+		}
+
+		if (msg->sub_id == HIDPP_SUBID_DEVICE_CONNECTION &&
+		    msg->device_id == lu_device_get_hidpp_id (device) &&
+		    (msg->data[0] & (1 << 6)) == 0) {
+			g_debug ("device replugged, waiting for it to settle");
+			g_usleep (G_USEC_PER_SEC);
+			break;
+		}
+	} while (i++ < max_tries);
+
+	g_hash_table_remove (ctx->hash_replug, lu_device_get_platform_id(device));
+
+	return TRUE;
+}
+
 static void
 lu_context_remove_udev_device (LuContext *ctx, GUdevDevice *udev_device)
 {

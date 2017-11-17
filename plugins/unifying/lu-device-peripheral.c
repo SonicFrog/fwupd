@@ -338,6 +338,8 @@ lu_device_peripheral_probe (LuDevice *device, GError **error)
 	if (idx != 0x00) {
 		lu_device_add_flag (device, LU_DEVICE_FLAG_CAN_FLASH);
 		lu_device_add_flag (device, LU_DEVICE_FLAG_REQUIRES_DETACH);
+		lu_device_add_flag (device, LU_DEVICE_FLAG_DETACH_WILL_REPLUG);
+		lu_device_add_flag (device, LU_DEVICE_FLAG_REQUIRES_ATTACH);
 	}
 	idx = lu_device_hidpp_feature_get_idx (device, HIDPP_FEATURE_DFU_CONTROL_SIGNED);
 	if (idx != 0x00) {
@@ -421,7 +423,7 @@ lu_device_peripheral_detach (LuDevice *device, GError **error)
 			return FALSE;
 		}
 
-		lu_device_add_flag (device, LU_DEVICE_FLAG_REQUIRES_RESET);
+		g_debug ("manual reset required");
 		return TRUE;
 	}
 
@@ -672,8 +674,15 @@ lu_device_peripheral_write_firmware (LuDevice *device,
 	const guint8 *data;
 	guint8 cmd = 0x04;
 	guint8 idx;
+	LuDevicePeripheral *self = LU_DEVICE_PERIPHERAL (device);
 
 	/* if we're in bootloader mode, we should be able to get this feature */
+	/* feature needs to be searched for since local list is not up to date */
+	idx = lu_device_hidpp_feature_search (device, HIDPP_FEATURE_DFU, error);
+	if (idx == 0x00) {
+		return FALSE;
+	}
+
 	idx = lu_device_hidpp_feature_get_idx (device, HIDPP_FEATURE_DFU);
 	if (idx == 0x00) {
 		g_set_error (error,
@@ -685,6 +694,10 @@ lu_device_peripheral_write_firmware (LuDevice *device,
 
 	/* flash hardware */
 	data = g_bytes_get_data (fw, &sz);
+
+	/* fw entity we are updating is contained in first command */
+	self->cached_fw_entity = data[0];
+
 	for (gsize i = 0; i < sz / 16; i++) {
 
 		/* send packet and wait for reply */
@@ -718,6 +731,14 @@ lu_device_peripheral_attach (LuDevice *device, GError **error)
 	guint8 idx;
 	g_autoptr(LuHidppMsg) msg = lu_hidpp_msg_new ();
 
+	if (lu_device_has_flag (device, LU_DEVICE_FLAG_REQUIRES_RESET)) {
+		g_set_error (error,
+			     G_IO_ERROR,
+			     G_IO_ERROR_PENDING,
+			     "device needs to be manually rebooted");
+		return FALSE;
+	}
+
 	/* if we're in bootloader mode, we should be able to get this feature */
 	idx = lu_device_hidpp_feature_get_idx (device, HIDPP_FEATURE_DFU);
 	if (idx == 0x00) {
@@ -738,9 +759,17 @@ lu_device_peripheral_attach (LuDevice *device, GError **error)
 		     LU_HIDPP_MSG_FLAG_IGNORE_SWID | // inferred?
 		     LU_HIDPP_MSG_FLAG_LONGER_TIMEOUT;
 	if (!lu_device_hidpp_transfer (device, msg, error)) {
-		g_prefix_error (error, "failed to restart device: ");
-		return FALSE;
+		if (g_error_matches (*error, G_IO_ERROR, G_IO_ERROR_TIMED_OUT)) {
+			/* some devices don't answer when asked to reboot */
+			g_debug ("device rebooted successfully");
+		} else {
+			g_prefix_error (error, "failed to restart device: ");
+			return FALSE;
+		}
 	}
+
+	g_debug ("waiting for device to settle...");
+	g_usleep (G_USEC_PER_SEC);
 
 	/* reprobe */
 	if (!lu_device_probe (device, error))

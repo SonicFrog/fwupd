@@ -45,6 +45,10 @@ gboolean	 lu_context_wait_for_replug		(LuContext	*ctx,
 							 LuDevice	*device,
 							 guint		 timeout_ms,
 							 GError		**error);
+gboolean         lu_context_wait_for_unifying_replug    (LuContext      *ctx,
+							 LuDevice       *device,
+							 guint          timeout_ms,
+							 GError         **error);
 
 LuContext	*lu_context_new				(GError		**error);
 LuContext	*lu_context_new_full			(GUsbContext	*usb_ctx);
